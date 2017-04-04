@@ -1,13 +1,19 @@
---[[
 local logtable = {}
+local q_list = KEYS[1]
+local q_set = KEYS[2]
+local command = ARGV[1]
+local name = ARGV[2]
+
+
+-- redis.call('del', '_debug')
 
 local function log(msg)
-      logtable[#logtable+1] = msg
+    -- redis.call('rpush', '_debug', command .. " => " .. msg)
 end
-]]--
 
-local q_set = 'q_set'
-local q_list = 'q_list'
+log("***")
+
+
 
 local function store_queue_info(key, m)
     for k,v in pairs(m) do
@@ -37,8 +43,12 @@ local function load_queue_info(key)
 end
 
 local function schedule(key)
+    log("cheduling: " .. key)
     local cnt = redis.call('sismember', q_set, key)
-    if cnt > 0 then return end
+    if cnt > 0 then
+        log("already scheduled: " .. key)
+        return
+    end
     redis.call('sadd', q_set, key)
     redis.call('lpush', q_list, key)
 end
@@ -60,7 +70,7 @@ end
 
 local function push(instance, data)
     redis.call ('lpush', instance, data)
-    schedule(instance)
+    return schedule(instance)
 end
 
 
@@ -90,6 +100,13 @@ local function pop()
             local data = redis.call('rpop', key)
             if data then
                 redis.call('lpush', q_list, key)
+                local len = redis.call('llen', key)
+                log("got data from: " .. key ..
+                    " len=" .. tostring(len))
+                if len == 0 then
+                    redis.call('srem', q_set, key)
+                end
+
                 return key, 'ordinary', data
             else
                 redis.call('srem', q_set, key)
@@ -98,8 +115,17 @@ local function pop()
     end
 end
 
+if command == "push" then
+    local instance = ARGV[3]
+    local data = ARGV[4]
+    return push(name .. "/" .. instance, data)
+elseif command == "pop" then
+    local key, t, data
+    key, t, data = pop()
+    return {key, t, data}
+end
 
-
+--[[
 if false then
     setup_weak_queue("u1", "http://asobu/u1", 5)
     setup_weak_queue("u2", "http://asobu/u2", 4)
@@ -112,6 +138,8 @@ else
     key, t, data = pop()
     return {key, t, data}
 end
+]]--
+
 --return pop()
 -- return load_queue_info('smrt')
 --local msg = "Hello, world!"
