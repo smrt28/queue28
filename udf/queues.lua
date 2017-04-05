@@ -1,17 +1,18 @@
 local logtable = {}
 local q_list = KEYS[1]
 local q_set = KEYS[2]
+local q_count = KEYS[3]
+
 local command = ARGV[1]
-local name = ARGV[2]
 
 
 -- redis.call('del', '_debug')
 
 local function log(msg)
-    -- redis.call('rpush', '_debug', command .. " => " .. msg)
+    redis.call('rpush', '_debug', command .. " => " .. msg)
 end
 
-log("***")
+log("------------------------------------")
 
 
 
@@ -67,62 +68,101 @@ local function setup_weak_queue(key, uri, count)
     end
 end
 
+local function decrement()
+    redis.call('decr', q_count)
+end
+
+local function decrement_by(i)
+    redis.call('decrby', q_count, i)
+end
+
+local function increment()
+    redis.call('incr', q_count)
+end
 
 local function push(instance, data)
+    log("push to: " .. instance .. "; data=" .. data)
+    increment()
     redis.call ('lpush', instance, data)
     return schedule(instance)
 end
 
 
-local function pop()
-    local cnt = 0
-    while true do
-        cnt = cnt + 1
-        local key = redis.call('rpop', q_list)
-
-        if not key then
-            return nil
-        end
-        local t = load_queue_info(key)
-        if t['t'] == 'weak' then
-            local c = tonumber(t['counter'])
-            if c > 0 then
-                t['counter'] = c - 1
-                store_queue_info(key, t)
-                if c > 1 then
-                    redis.call('lpush', q_list, key)
-                else
-                    redis.call('srem', q_set, key)
-                end
-                return key, 'weak', t['uri']
-            end
-        elseif t['t'] == 'ordinary' then
-            local data = redis.call('rpop', key)
-            if data then
-                redis.call('lpush', q_list, key)
-                local len = redis.call('llen', key)
-                log("got data from: " .. key ..
-                    " len=" .. tostring(len))
-                if len == 0 then
-                    redis.call('srem', q_set, key)
-                end
-
-                return key, 'ordinary', data
-            else
+local function pop(key)
+    log("pop from: " .. key)
+    local t = load_queue_info(key)
+    if t['t'] == 'weak' then
+        local c = tonumber(t['counter'])
+        if c > 0 then
+            t['counter'] = c - 1
+            store_queue_info(key, t)
+            if c <= 1 then
                 redis.call('srem', q_set, key)
             end
+            decrement()
+            return key, 'weak', t['uri']
+        end
+    elseif t['t'] == 'ordinary' then
+        local data = redis.call('rpop', key)
+        if data then
+            local len = redis.call('llen', key)
+            log("got data from: " .. key ..
+                " len=" .. tostring(len))
+            if len == 0 then
+                redis.call('srem', q_set, key)
+            end
+
+            decrement()
+            return key, 'ordinary', data
+        else
+            redis.call('srem', q_set, key)
         end
     end
 end
 
-if command == "push" then
-    local instance = ARGV[3]
-    local data = ARGV[4]
-    return push(name .. "/" .. instance, data)
+
+local function select_queue()
+    while true do
+        local key = redis.call('rpop', q_list)
+        if not key then return nil end
+        local t = load_queue_info(key)
+        if t['t'] == 'weak' then
+            if t['counter'] > 0 then
+                redis.call('lpush', q_list, key)
+                log("selecting queue: " .. key)
+                return key
+            end
+            redis.call('srem', q_set, key)
+        elseif t['t'] == 'ordinary' then
+            local len = redis.call('llen', key)
+            log("len of " .. key .. " id " .. tostring(len))
+            if len > 0 then
+                redis.call('lpush', q_list, key)
+                log("selecting queue: " .. key)
+                return key
+            end
+            redis.call('srem', q_set, key)
+        end
+
+        log("failed to select queue: " .. key )
+    end
+end
+
+if command == "select_queue" then
+    return select_queue()
+elseif command == "push" then
+    return push(KEYS[4], ARGV[2])
 elseif command == "pop" then
     local key, t, data
-    key, t, data = pop()
+    key, t, data = pop(KEYS[4])
+    if key == nil then return nil end
     return {key, t, data}
+elseif command == "clear" then
+    local key = KEYS[4]
+    local len = redis.call('llen', key)
+    decrement_by(len)
+    redis.call('del', key)
+    redis.call('srem', q_set, key)
 end
 
 --[[
