@@ -54,18 +54,33 @@ local function schedule(key)
     redis.call('lpush', q_list, key)
 end
 
-local function setup_weak_queue(key, uri, count)
+local function setup_counter_queue(key, data, count)
+    if count <= 0 then return 'ok' end
+    local tpe = redis.call('type', key)['ok']
+    if not (tpe == 'hash' or tpe == 'none') then
+        return 'exists'
+    end
+
+    if tpe == 'hash' then
+        info = load_queue_info(key)
+        c = tonumber(info['counter'])
+        decrement_by(c)
+    end
+
     local o = {
-        t = 'weak',
-        uri = uri,
+        t = 'counter',
+        data = data,
         counter = count
     }
 
     store_queue_info(key, o)
 
     if count > 0 then
+        increment_by(count)
         schedule(key)
     end
+
+    return 'ok'
 end
 
 local function decrement()
@@ -80,6 +95,11 @@ local function increment()
     redis.call('incr', q_count)
 end
 
+local function increment_by(i)
+    redis.call('incrby', q_count, i)
+end
+
+
 local function push(instance, data)
     log("push to: " .. instance .. "; data=" .. data)
     increment()
@@ -91,7 +111,7 @@ end
 local function pop(key)
     log("pop from: " .. key)
     local t = load_queue_info(key)
-    if t['t'] == 'weak' then
+    if t['t'] == 'counter' then
         local c = tonumber(t['counter'])
         if c > 0 then
             t['counter'] = c - 1
@@ -100,14 +120,13 @@ local function pop(key)
                 redis.call('srem', q_set, key)
             end
             decrement()
-            return key, 'weak', t['uri']
+            return key, 'counter', t['data']
         end
     elseif t['t'] == 'ordinary' then
         local data = redis.call('rpop', key)
         if data then
             local len = redis.call('llen', key)
-            log("got data from: " .. key ..
-                " len=" .. tostring(len))
+            log("got data from: " .. key .. " len=" .. tostring(len))
             if len == 0 then
                 redis.call('srem', q_set, key)
             end
@@ -126,7 +145,7 @@ local function select_queue()
         local key = redis.call('rpop', q_list)
         if not key then return nil end
         local t = load_queue_info(key)
-        if t['t'] == 'weak' then
+        if t['t'] == 'counter' then
             if t['counter'] > 0 then
                 redis.call('lpush', q_list, key)
                 log("selecting queue: " .. key)
@@ -163,13 +182,15 @@ elseif command == "clear" then
     decrement_by(len)
     redis.call('del', key)
     redis.call('srem', q_set, key)
+elseif command == 'put_counter' then
+
 end
 
 --[[
 if false then
-    setup_weak_queue("u1", "http://asobu/u1", 5)
-    setup_weak_queue("u2", "http://asobu/u2", 4)
-    setup_weak_queue("u3", "http://asobu/u3", 8)
+    setup_counter_queue("u1", "http://asobu/u1", 5)
+    setup_counter_queue("u2", "http://asobu/u2", 4)
+    setup_counter_queue("u3", "http://asobu/u3", 8)
     push("y4", "data1")
     push("y4", "data2")
     push("y4", "data3")
