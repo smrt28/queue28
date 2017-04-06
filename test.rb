@@ -12,6 +12,7 @@ class Queue28
     end
 
     def instance_key instance
+        raise if instance.include? '/'
         "#{@name}/#{instance}"
     end
 
@@ -33,6 +34,24 @@ class Queue28
         end
 
         new_lines.join "\n"
+    end
+
+    def select_queue
+        need = [
+            @qlist_key,
+            @qset_key
+        ]
+        @redis.evalsha @sha, need, [ 'select_queue' ]
+    end
+
+    def pop_from_queue queue
+        need = [
+            @qlist_key, #1
+            @qset_key, #2
+            @count_key, #3
+            queue #4
+        ]
+        @redis.evalsha @sha, need, [ 'pop' ]
     end
 
     public
@@ -80,17 +99,9 @@ class Queue28
     end
 
 
-    def pop_from_queue queue
-        need = [
-            @qlist_key, #1
-            @qset_key, #2
-            @count_key, #3
-            queue #4
-        ]
-        @redis.evalsha @sha, need, [ 'pop' ]
-    end
 
-    def put_counter instance, data
+    def put_counter instance, data, count
+        raise if ! count.is_a? Numeric
         queue = instance_key(instance)
         need = [
             @qlist_key, #1
@@ -98,7 +109,7 @@ class Queue28
             @count_key, #3
             queue #4
         ]
-        @redis.evalsha @sha, need, [ 'put_counter', data ]
+        @redis.evalsha @sha, need, [ 'put_counter', data, count ]
     end
 
 
@@ -110,16 +121,30 @@ class Queue28
             queue = select_queue
             return nil if queue.nil?
             rv = pop_from_queue queue
-            return rv if !rv.nil?
+            if ! rv.nil?
+                s = rv[0].split('/')[1]
+                rv[0] = s
+                return rv
+            end
         end
     end
 
-    def select_queue
+    def len instance=nil
+        raise if ! count.is_a? Numeric
+        if instance.nil?
+            queue = nil
+
+        else
+            queue = instance_key(instance)
+        end
         need = [
-            @qlist_key,
-            @qset_key
+            @qlist_key, #1
+            @qset_key, #2
+            @count_key, #3
+            queue #4
         ]
-        @redis.evalsha @sha, need, [ 'select_queue' ]
+        @redis.evalsha @sha, need, [ 'put_counter', data, count ]
+
     end
 
     def clear_log
@@ -127,9 +152,13 @@ class Queue28
     end
 end
 
-
-q = Queue28.new(Redis.new, 'smrt')
+redis = Redis.new
+redis.call 'FLUSHALL'
+q = Queue28.new(redis, 'smrt', debug: true)
 q.clear_log
+
+puts q.put_counter 'cmrt', 'xsomedatax', 10
+
 q.push 'smrt1', 'somedata1'
 q.push 'smrt1', 'somedata2'
 q.push 'smrt1', 'somedata3'
@@ -150,13 +179,16 @@ q.push 'smrt3', 'somedata4y'
 q.push 'smrt3', 'somedata5y'
 q.push 'smrt3', 'somedata6y'
 
-q.clear 'smrt2'
 
 puts q.len
 
 cnt = 0
 loop do
     cnt += 1; break if cnt == 1000
+
+    if cnt == 10
+        q.put_counter 'cmrt2', 'xsomedatax', 3
+    end
     res = q.pop
     break if res.nil?
     puts res.to_s

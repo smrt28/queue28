@@ -14,6 +14,22 @@ end
 
 log("------------------------------------")
 
+local function decrement()
+    redis.call('decr', q_count)
+end
+
+local function decrement_by(i)
+    redis.call('decrby', q_count, i)
+end
+
+local function increment()
+    redis.call('incr', q_count)
+end
+
+local function increment_by(i)
+    redis.call('incrby', q_count, i)
+end
+
 
 
 local function store_queue_info(key, m)
@@ -83,22 +99,6 @@ local function setup_counter_queue(key, data, count)
     return 'ok'
 end
 
-local function decrement()
-    redis.call('decr', q_count)
-end
-
-local function decrement_by(i)
-    redis.call('decrby', q_count, i)
-end
-
-local function increment()
-    redis.call('incr', q_count)
-end
-
-local function increment_by(i)
-    redis.call('incrby', q_count, i)
-end
-
 
 local function push(instance, data)
     log("push to: " .. instance .. "; data=" .. data)
@@ -146,7 +146,7 @@ local function select_queue()
         if not key then return nil end
         local t = load_queue_info(key)
         if t['t'] == 'counter' then
-            if t['counter'] > 0 then
+            if tonumber(t['counter']) > 0 then
                 redis.call('lpush', q_list, key)
                 log("selecting queue: " .. key)
                 return key
@@ -167,6 +167,23 @@ local function select_queue()
     end
 end
 
+local function clear(key)
+    local t = load_queue_info(key)
+    if t['t'] == 'counter' then
+        local c = tonumber(t['counter'])
+        decrement_by(c)
+        redis.call('del', key)
+        redis.call('srem', q_set, key)
+        return c
+    end
+
+    local len = redis.call('llen', key)
+    decrement_by(len)
+    redis.call('del', key)
+    redis.call('srem', q_set, key)
+    return len
+end
+
 if command == "select_queue" then
     return select_queue()
 elseif command == "push" then
@@ -178,38 +195,10 @@ elseif command == "pop" then
     return {key, t, data}
 elseif command == "clear" then
     local key = KEYS[4]
-    local len = redis.call('llen', key)
-    decrement_by(len)
-    redis.call('del', key)
-    redis.call('srem', q_set, key)
+    clear(key)
 elseif command == 'put_counter' then
-
+    local count = tonumber(ARGV[3])
+    local data = ARGV[2]
+    setup_counter_queue(KEYS[4], data, count)
 end
-
---[[
-if false then
-    setup_counter_queue("u1", "http://asobu/u1", 5)
-    setup_counter_queue("u2", "http://asobu/u2", 4)
-    setup_counter_queue("u3", "http://asobu/u3", 8)
-    push("y4", "data1")
-    push("y4", "data2")
-    push("y4", "data3")
-else
-    local key, t, data
-    key, t, data = pop()
-    return {key, t, data}
-end
-]]--
-
---return pop()
--- return load_queue_info('smrt')
---local msg = "Hello, world!"
-
---local x = cjson.decode(a)
-
---return type(x)
-
---[[
-
-]]--
 
