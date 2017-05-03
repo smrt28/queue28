@@ -1,12 +1,53 @@
+-- LUA implementation of redis round-robin QUEUES
+--
+-- The script maintains a set of queues. There are 2 types od queues:
+--
+-- Redis LIST - this is standard FIFO queue.
+--
+-- Redis HASH - the queue if sequence of numbers (1..N). The implementation
+-- is realized by counter which decrements by every pop.
+--
+--
+-- The script maintains:
+--      redis list q_list - the list of redis keys of queues
+--      redis set q_set - the set of non-empty queues (redis keys)
+--      redis number q_count - the total number of all items in all queues (even couner queues)
+--
+--
+-- POP
+--
+--  You have to select a queue first. The queue is selected by
+--  select_queue() function. select_queue reads the first element from
+--  q_list (list of queues). The read element is a redis key of queue.
+--  If the selected queue is empty, it removes the queue also from
+--  q_set and continues reading from q_list until an non-empty queue is found.
+--  If an non empty queue is found then it is pushed back to q_list and
+--  the name of the queue is returned.
+--
+--  You can pop from the selected queue by an usual way. LPOP form FIFO
+--  queue or DECR from couner queue.
+--
+--  It is possible that an another process would pop the last item from the
+--  queue which you have selected. In this case pop would return null
+--  and you'll have to select another queue.
+--
+-- PUSH
+--
+--  It simly pushes the item to the queue. Then if the queue is already
+--  in q_set it's finished. Otherwise, it appens the queue to q_list and
+--  to q_set. (this is why we need q_set - to recognize if q_list already
+--  includes the queue)
+--
+--
+--
+
+
 local logtable = {}
 local q_list = KEYS[1]
 local q_set = KEYS[2]
 local q_count = KEYS[3]
 
 local command = ARGV[1]
-
-
--- redis.call('del', '_debug')
 
 local function log(msg)
     redis.call('rpush', '_debug', command .. " => " .. msg)
