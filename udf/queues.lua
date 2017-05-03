@@ -31,7 +31,6 @@ local function increment_by(i)
 end
 
 
-
 local function store_queue_info(key, m)
     for k,v in pairs(m) do
         redis.call ('hset', key, k, v)
@@ -184,6 +183,16 @@ local function clear(key)
     return len
 end
 
+local function len_of(key)
+    local t = load_queue_info(key)
+    if t['t'] == 'counter' then
+        return tonumber(t['counter'])
+    end
+
+    return redis.call('llen', key)
+end
+
+
 if command == "select_queue" then
     return select_queue()
 elseif command == "push" then
@@ -200,5 +209,8 @@ elseif command == 'put_counter' then
     local count = tonumber(ARGV[3])
     local data = ARGV[2]
     setup_counter_queue(KEYS[4], data, count)
+elseif command == 'len_of' then
+    return len_of(KEYS[1])
+elseif command == 'ping' then
+    return 'pong'
 end
-
