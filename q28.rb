@@ -1,4 +1,4 @@
-class Queue28
+class RRQueue
     private
 
     # path to lua script
@@ -10,7 +10,7 @@ class Queue28
         if @debug
             "#{lua_path}.sha1_debug"
         else
-            "#{lua_path}.sha1_relase"
+            "#{lua_path}.sha1_release"
         end
     end
 
@@ -22,6 +22,7 @@ class Queue28
 
     # redis.evalsha wrapper
     def _eval need, args
+        # DLOG "RRQueue-eval need=#{need}, args=#{args}"
         if @sha.nil?
             # try to get sha1 from cahe
             @sha = cached_sha1
@@ -176,5 +177,19 @@ class Queue28
 
     def clear_log
         @redis.call 'del', '_debug'
+    end
+
+    def queues
+        rv = []
+        raw = @redis.call 'lrange', @qlist_key, 0, 10000
+        raw.each do |x|
+            len = @redis.call 'llen', x
+            next if len == 0
+            rv << {
+                q: x.split('/')[1][1..-1],
+                l: len
+            }
+        end
+        rv
     end
 end

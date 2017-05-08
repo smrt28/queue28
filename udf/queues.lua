@@ -81,11 +81,19 @@ end
 local function load_queue_info(key)
     local rv = {}
     local tpe = redis.call('type', key)['ok']
+    if tpe == 'none' then
+        return { t = 'none' }
+    end
     if tpe == 'list' then
         return { t = 'ordinary' }
     end
 
     local t = redis.call('hgetall', key)
+
+    if t == nil then
+        return { t = 'none' }
+    end
+
     local k = nil; local v = nil
 
     for _, i in pairs(t) do
@@ -156,27 +164,17 @@ local function pop(key)
         if c > 0 then
             t['counter'] = c - 1
             store_queue_info(key, t)
-            if c <= 1 then
-                redis.call('srem', q_set, key)
-            end
             decrement()
             return key, 'counter', t['data']
         end
     elseif t['t'] == 'ordinary' then
         local data = redis.call('rpop', key)
         if data then
-            local len = redis.call('llen', key)
-            log("got data from: " .. key .. " len=" .. tostring(len))
-            if len == 0 then
-                redis.call('srem', q_set, key)
-            end
-
             decrement()
             return key, 'ordinary', data
-        else
-            redis.call('srem', q_set, key)
         end
     end
+    return nil
 end
 
 
@@ -201,6 +199,8 @@ local function select_queue()
                 return key
             end
             redis.call('srem', q_set, key)
+        else
+            redis.call('srem', q_set, key)
         end
 
         log("failed to select queue: " .. key )
@@ -213,14 +213,12 @@ local function clear(key)
         local c = tonumber(t['counter'])
         decrement_by(c)
         redis.call('del', key)
-        redis.call('srem', q_set, key)
         return c
     end
 
     local len = redis.call('llen', key)
     decrement_by(len)
     redis.call('del', key)
-    redis.call('srem', q_set, key)
     return len
 end
 
