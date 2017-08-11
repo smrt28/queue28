@@ -138,17 +138,27 @@ class RRQueue
         _eval need, [ 'clear' ]
     end
 
-    def push instance, data
+private
+    def _push_need instance
         queue = instance_key(instance)
-        need = [
+        [
             @qlist_key, #1
             @qset_key, #2
             @count_key, #3
             queue, #4
             @total_key # 5
         ]
-        _eval need, [ 'push', data ]
     end
+public
+
+    def push instance, data
+        _eval _push_need(instance), [ 'push', data ]
+    end
+
+    def rpush instance, data
+        _eval _push_need(instance), [ 'rpush', data ]
+    end
+
 
     def len_of instance
         queue = instance_key(instance)
@@ -204,5 +214,10 @@ class RRQueue
             }
         end
         rv
+    end
+
+    def get_log
+        raise if !@debug
+        @redis.call 'lrange', '_debug', 0, 10000
     end
 end

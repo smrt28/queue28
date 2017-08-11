@@ -140,6 +140,14 @@ local function push(instance, data)
     return schedule(instance)
 end
 
+local function rpush(instance, data)
+    log("push to: " .. instance .. "; data=" .. data)
+    increment()
+    redis.call ('rpush', instance, data)
+    return schedule(instance)
+end
+
+
 
 local function pop(key)
     log("pop from: " .. key)
@@ -221,6 +229,8 @@ if command == "select_queue" then
     return select_queue()
 elseif command == "push" then
     return push(KEYS[4], ARGV[2])
+elseif command == "rpush" then
+    return rpush(KEYS[4], ARGV[2])
 elseif command == "pop" then
     local key, t, data
     key, t, data = pop(KEYS[4])
