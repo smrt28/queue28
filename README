@@ -3,11 +3,10 @@ Round robin queues implementation
 
 Consider, you have many customers. The customers push their CPU intensive jobs
 to the queue. Your compute capacity is limited. If you had just one queue for
-all the customers together, and there was one customer who pushed 1M jobs to
-that queue and one customer who poshed just 1 job later, he would have to wait
-for processing 1M jobs of previous customer before his single job was
+all the customers together, and there was one customer who had pushed 1M jobs
+to that queue and one customer who poshed just 1 job later, he would have to
+wait for processing 1M jobs of previous customer before his single job was
 processed.
-
 
 Queue28 maintains one queue per customer. The PUSH operation has one additional
 argument which is the name of the customer. POP cycles in round robin fashion
