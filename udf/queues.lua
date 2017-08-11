@@ -46,6 +46,7 @@ local logtable = {}
 local q_list = KEYS[1]
 local q_set = KEYS[2]
 local q_count = KEYS[3]
+local q_total = KEYS[5]
 
 local command = ARGV[1]
 
@@ -65,6 +66,7 @@ end
 
 local function increment()
     redis.call('incr', q_count)
+    redis.call('incr', q_total)
 end
 
 local function increment_by(i)
@@ -243,7 +245,7 @@ elseif command == "pop" then
     return {key, t, data}
 elseif command == "clear" then
     local key = KEYS[4]
-    clear(key)
+    return clear(key)
 elseif command == 'put_counter' then
     local count = tonumber(ARGV[3])
     local data = ARGV[2]

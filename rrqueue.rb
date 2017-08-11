@@ -1,5 +1,4 @@
 class RRQueue
-    private
 
     # path to lua script
     def lua_path
@@ -10,7 +9,7 @@ class RRQueue
         if @debug
             "#{lua_path}.sha1_debug"
         else
-            "#{lua_path}.sha1_release"
+            "#{lua_path}.sha1_relase"
         end
     end
 
@@ -88,6 +87,7 @@ class RRQueue
         raise if name.include? '/'
         @debug = debug
         @name = name
+        @total_key = "q_total_#{name}"
         @qlist_key = "q_list_#{name}"
         @qset_key = "q_set_#{name}"
         @count_key = "q_count_#{name}"
@@ -98,11 +98,15 @@ class RRQueue
 
     attr_reader :sha
 
-    def update_udf
+    def lua_code
         udf = IO.read(lua_path)
-        udf = preprocess_udf udf
-        @sha = @redis.script :load, udf
+        preprocess_udf udf
+    end
+
+    def update_udf
+        @sha = @redis.script(:load, lua_code)
         IO.write(lua_sha1_path, @sha)
+        @sha
     end
 
 
@@ -111,7 +115,15 @@ class RRQueue
     end
 
     def len
-        @redis.call 'get', @count_key
+        rv = @redis.call 'get', @count_key
+        rv = 0 if rv.nil?
+        rv
+    end
+
+    def total
+        rv = @redis.call 'get', @total_key
+        rv = 0 if rv.nil?
+        rv
     end
 
 
@@ -132,7 +144,8 @@ class RRQueue
             @qlist_key, #1
             @qset_key, #2
             @count_key, #3
-            queue #4
+            queue, #4
+            @total_key # 5
         ]
         _eval need, [ 'push', data ]
     end
