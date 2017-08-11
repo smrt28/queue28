@@ -1,1 +1,29 @@
-init
+Round robin queues implementation
+---------------------------------
+
+Consider, you have many customers. The customers push their CPU intensive jobs
+to the queue. Your compute capacity is limited. If you had just one queue for
+all the customers together, and there was one customer who pushed 1M jobs to
+that queue and one customer who poshed just 1 job later, he would have to wait
+for processing 1M jobs of previous customer before his single job was
+processed.
+
+
+Queue28 maintains one queue per customer. The PUSH operation has one additional
+argument which is the name of the customer. POP cycles in round robin fashion
+over all the customers queues.
+
+The queues are maintained in Redis, it uses lua UDFs (User defined function) to
+make the redis operations atomically.
+
+
+Since redis UDF always requires the list of to-be-modified keys in advance,
+the implementation becomes little complicated. The reason is it needs the
+list of the keys to maintain multiple redis servers data synced.
+
+See details at https://redis.io/commands/eval
+
+To handle the issue, queue28 calls "select_queue" first. It returns the first
+next non-empty queue, which you can pop. If there are several processes which
+pop the queue, the pop can return nil due to rice condition. It's ok, since you
+can select next queue and repeat the pop.
